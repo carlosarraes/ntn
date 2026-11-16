@@ -119,7 +119,7 @@ pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
                 "id": id,
                 "title": store.title(id),
                 "type": b.map(|b| b["type"].clone()),
-                "path": strip(&hit["highlight"]["pathText"]),
+                "path": strip(&hit["highlight"]["pathText"]).filter(|p| !p.is_empty()).unwrap_or_else(|| store.path(id)),
                 "snippet": strip(&hit["highlight"]["text"]),
                 "last_edited": b.and_then(|b| ms_to_iso(&b["last_edited_time"])),
                 "url": url_for(&store.base, id),
@@ -130,11 +130,12 @@ pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
         .emit(json!({ "total": r["total"], "results": results }), |v| {
             let mut s = format!("{} results\n\n", v["total"]);
             for hit in v["results"].as_array().into_iter().flatten() {
-                let icon = if hit["type"] == "collection_view_page" {
-                    "🗃"
-                } else {
-                    "📄"
-                };
+                let icon =
+                    if hit["type"] == "collection_view_page" || hit["type"] == "collection_view" {
+                        "🗃"
+                    } else {
+                        "📄"
+                    };
                 s.push_str(&format!(
                     "{icon} {}\n",
                     hit["title"].as_str().unwrap_or_default()

@@ -67,14 +67,59 @@ impl Store {
         {
             let t = plain(&c["name"], self);
             if !t.is_empty() {
-                return t;
+                return t.trim().to_string();
             }
         }
         let t = plain(
             b.get("properties").map_or(&b["name"], |p| &p["title"]),
             self,
         );
+        let t = t.trim().to_string();
         if t.is_empty() { "Untitled".into() } else { t }
+    }
+}
+
+impl Store {
+    /// Breadcrumb of loaded ancestors, outermost first ("Team / Projects").
+    pub fn path(&self, id: &str) -> String {
+        let mut parts = Vec::new();
+        let mut cur = self.block(id).cloned();
+        while let Some(b) = cur.take() {
+            if parts.len() >= 10 {
+                break;
+            }
+            let Some(pid) = b["parent_id"].as_str() else {
+                break;
+            };
+            match b["parent_table"].as_str() {
+                Some("block") => {
+                    let Some(p) = self.block(pid) else { break };
+                    // Inline databases and column layouts are not meaningful path steps.
+                    let t = p["type"].as_str().unwrap_or_default();
+                    if !matches!(t, "column" | "column_list") {
+                        parts.push(self.title(pid));
+                    }
+                    cur = Some(p.clone());
+                }
+                Some("collection") => {
+                    let Some(c) = get(&self.map, "collection", pid) else {
+                        break;
+                    };
+                    parts.push(plain(&c["name"], self).trim().to_string());
+                    cur = c["parent_id"].as_str().and_then(|x| self.block(x)).cloned();
+                    if let Some(p) = &cur {
+                        if p["type"] != "collection_view_page" {
+                            continue;
+                        }
+                        cur = Some(p.clone());
+                    }
+                }
+                _ => break,
+            }
+        }
+        parts.reverse();
+        parts.retain(|p| !p.is_empty());
+        parts.join(" / ")
     }
 }
 

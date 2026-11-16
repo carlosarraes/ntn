@@ -155,9 +155,18 @@ fn render_block(store: &Store, b: &Value, depth: usize, number: usize, out: &mut
             line(out, &text);
             out.push('\n');
         }
-        "header" => line(out, &format!("## {text}\n")),
-        "sub_header" => line(out, &format!("### {text}\n")),
-        "sub_sub_header" => line(out, &format!("#### {text}\n")),
+        "header" => {
+            out.push('\n');
+            line(out, &format!("## {text}\n"))
+        }
+        "sub_header" => {
+            out.push('\n');
+            line(out, &format!("### {text}\n"))
+        }
+        "sub_sub_header" => {
+            out.push('\n');
+            line(out, &format!("#### {text}\n"))
+        }
         "bulleted_list" | "toggle" => line(out, &format!("- {text}")),
         "numbered_list" => line(out, &format!("{number}. {text}")),
         "to_do" => {
@@ -178,7 +187,10 @@ fn render_block(store: &Store, b: &Value, depth: usize, number: usize, out: &mut
             out.push_str(&format!("{pad}```{lang}\n{code}\n{pad}```\n\n"));
         }
         "equation" => line(out, &format!("$$\n{}\n$$\n", plain(&props["title"], store))),
-        "divider" => line(out, "---\n"),
+        "divider" => {
+            out.push('\n');
+            line(out, "---\n")
+        }
         "page" => {
             line(
                 out,

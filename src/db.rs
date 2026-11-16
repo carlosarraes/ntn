@@ -113,7 +113,9 @@ fn row(store: &Store, schema: &Value, b: &Value) -> Value {
     let Some(schema) = schema.as_object() else {
         return Value::Object(out);
     };
-    for (pid, def) in schema {
+    let mut ordered: Vec<(&String, &Value)> = schema.iter().collect();
+    ordered.sort_by_key(|(_, d)| d["type"] != "title");
+    for (pid, def) in ordered {
         let name = def["name"].as_str().unwrap_or(pid).to_string();
         let raw = &b["properties"][pid];
         let value = match def["type"].as_str().unwrap_or_default() {
