@@ -1,6 +1,6 @@
 ---
 name: ntn
-description: Read and search Notion from the terminal with the read-only `ntn` CLI. Use when the user asks about content in Notion, wants to find a Notion page or doc, read a Notion URL, or list rows of a Notion database.
+description: Read and search Notion from the terminal with the read-only `ntn` CLI. Use when the user asks about content in Notion, wants to find a Notion page or doc, read a Notion URL, check comments or recent changes on a page, review meeting notes and action items, or list and filter rows of a Notion database.
 ---
 
 
@@ -16,16 +16,23 @@ Any Notion URL (`https://www.notion.so/<ws>/Title-<32hex>[?v=<view>][&p=<page>]`
 
 ## Commands
 ```
-ntn search "<query>" [--limit N] [--sort relevance|last-edited] [--in <page>]
-ntn page read <url|id>          # Markdown; JSON: {id,title,url,last_edited,markdown}
-ntn db query <url|id> [--limit N] [--search q]   # rows keyed by column name
-ntn spaces                      # workspaces; pick one with --space <id>
+ntn search "<query>" [--limit N] [--sort relevance|last-edited] [--in <page>] [--since 7d] [--edited-by me|@Name]
+ntn page read <url|id> [<url|id> ...] [--section "Heading"] [--transcript]   # Markdown; several pages -> JSON array
+ntn page comments <url> [--all]          # open threads (with --all: resolved too): quote, author, time
+ntn page changes <url> [--since 2d]      # blocks added/edited since, with the heading they sit under
+ntn db query <url|id> [--where 'Status=Done'] [--where 'Owner=@Ana'] [--sort 'Date desc'] [--limit N] [--search q]
+ntn meetings list [--since 7d] [--query q]
+ntn meetings read <url> [--transcript]   # summary, action_items {text,done,owners,due}, notes, transcript
+ntn spaces                               # workspaces; pick one with --space <id>
 ntn auth whoami | list [--check]
 ```
+`--where` operators: `=` `!=` `>` `<` `>=` `<=` `~` (contains). Values match the displayed cell text, case-insensitive; multi-value cells match if any value does.
+Times: `30m`, `2h`, `7d`, `2w` or `YYYY-MM-DD`.
 Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c`, `--json`, `--text`, `-v`.
 
 ## Tips
-- Search first, then `page read` the `url` of the best hit.
+- Search first, then `page read` the `url` of the best hit. On long pages use `--section`.
+- Meeting action items: `ntn meetings read <url> --fields action_items`.
 - Links to other pages in Markdown are full Notion URLs you can `page read` next.
 - Inline databases render as `🗃 Database [...]`; read rows with `ntn db query <url>`.
 - Keep output small: `ntn db query <url> --fields Name,Status,url`.

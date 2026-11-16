@@ -3,7 +3,16 @@ use serde_json::{Map, Value};
 use std::io::IsTerminal;
 
 /// Keys holding the primary list of a response; `--fields` projects these.
-const LIST_KEYS: &[&str] = &["results", "rows", "blocks", "spaces", "users", "workspaces"];
+const LIST_KEYS: &[&str] = &[
+    "results",
+    "rows",
+    "meetings",
+    "threads",
+    "changes",
+    "action_items",
+    "spaces",
+    "accounts",
+];
 
 pub struct Output {
     json: bool,
@@ -71,6 +80,13 @@ fn pick(item: &Value, fields: &[String]) -> Value {
 fn project(value: Value, fields: &[String]) -> Value {
     match value {
         Value::Array(items) => Value::Array(items.iter().map(|i| pick(i, fields)).collect()),
+        Value::Object(map)
+            if fields
+                .iter()
+                .all(|f| map.contains_key(f.split('.').next().unwrap_or_default())) =>
+        {
+            pick(&Value::Object(map), fields)
+        }
         Value::Object(mut map) => {
             match LIST_KEYS
                 .iter()

@@ -151,7 +151,20 @@ fn fmt_date(d: &Value) -> String {
     };
     if let Some(end) = d["end_date"].as_str() {
         s.push_str(" → ");
-        s.push_str(end);
+        if end != start || d["end_time"].is_null() {
+            s.push_str(end);
+            s.push(' ');
+        }
+        if let Some(t) = d["end_time"].as_str() {
+            s.push_str(t);
+        }
+        s = s.trim_end().to_string();
+    }
+    if let Some(tz) = d["time_zone"]
+        .as_str()
+        .filter(|_| !d["start_time"].is_null())
+    {
+        s.push_str(&format!(" ({tz})"));
     }
     s
 }
@@ -189,12 +202,27 @@ fn render(rich: &Value, store: &Store, md: bool) -> String {
                 "d" => text = fmt_date(&d[1]),
                 "e" => text = format!("${}$", d[1].as_str().unwrap_or_default()),
                 "a" => link = d[1].as_str().map(str::to_string),
+                // AI citation pointing back into a meeting transcript: noise in text.
+                "ci" => text.clear(),
+                "lm" => {
+                    let href = d[1]["href"].as_str().unwrap_or_default();
+                    text = d[1]["title"]
+                        .as_str()
+                        .filter(|t| !t.is_empty())
+                        .unwrap_or(href)
+                        .to_string();
+                    link = Some(href.to_string()).filter(|h| !h.is_empty());
+                }
                 "b" => bold = true,
                 "i" => italic = true,
                 "s" => strike = true,
                 "c" => code = true,
                 _ => {}
             }
+        }
+        // "‣" is Notion's placeholder for an inline object; never leak it unresolved.
+        if text == "‣" {
+            text.clear();
         }
         if md && !text.trim().is_empty() {
             if code {
@@ -253,6 +281,15 @@ mod tests {
             markdown(&rich, &s),
             "Hi @Ana see [Roadmap](https://n.so/p1) _**bold**_ `x` [site](https://x.io) due 2026-01-02"
         );
+    }
+
+    #[test]
+    fn drops_citations_and_renders_link_mentions() {
+        let s = store();
+        let cited = json!([["do it "], ["‣", [["ci", {"href": "https://x#1"}]]], ["‣", [["zz"]]]]);
+        assert_eq!(plain(&cited, &s), "do it ");
+        let lm = json!([["‣", [["lm", {"href": "https://figma.com/f", "title": "Mock"}]]]]);
+        assert_eq!(markdown(&lm, &s), "[Mock](https://figma.com/f)");
     }
 
     #[test]

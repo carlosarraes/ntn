@@ -56,10 +56,21 @@ enum Command {
         #[command(subcommand)]
         cmd: read::DbCmd,
     },
+    /// Notion AI meeting notes: list and read
+    Meetings {
+        #[command(subcommand)]
+        cmd: read::MeetingsCmd,
+    },
     /// List the workspaces your account belongs to
     Spaces,
     /// Print a usage guide written for LLM agents
     Llm,
+    /// Call an allowlisted read endpoint with a JSON body and print the raw response
+    #[command(hide = true)]
+    Raw {
+        endpoint: String,
+        body: Option<String>,
+    },
 }
 
 pub struct Ctx {
@@ -94,7 +105,15 @@ pub fn run() -> i32 {
         Command::Search(args) => read::search(&ctx, args),
         Command::Page { cmd } => read::page(&ctx, cmd),
         Command::Db { cmd } => read::db(&ctx, cmd),
+        Command::Meetings { cmd } => read::meetings(&ctx, cmd),
         Command::Spaces => read::spaces(&ctx),
+        Command::Raw { endpoint, body } => (|| {
+            let body: serde_json::Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+                .map_err(|e| AppError::input(format!("body is not JSON: {e}")))?;
+            let r = ctx.client()?.call(&endpoint, body)?;
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            Ok(())
+        })(),
         Command::Llm => {
             print!("{LLM_GUIDE}");
             Ok(())

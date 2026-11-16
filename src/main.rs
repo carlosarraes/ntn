@@ -9,6 +9,7 @@ mod ids;
 mod output;
 mod page;
 mod records;
+mod time;
 
 fn main() {
     std::process::exit(cli::run());
