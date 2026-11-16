@@ -24,7 +24,7 @@ ntn auth whoami | list [--check]
 ```
 `--where` operators: `=` `!=` `>` `<` `>=` `<=` `~` (contains). Values match the displayed cell text, case-insensitive; multi-value cells match if any value does.
 Times: `30m`, `2h`, `7d`, `2w` or `YYYY-MM-DD`.
-Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c`, `--json`, `--text`, `-v`.
+Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c` (trims items; implies JSON), `--json`, `--text`, `-v`.
 
 ## Tips
 - Search first, then `page read` the `url` of the best hit. On long pages use `--section`.

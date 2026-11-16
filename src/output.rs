@@ -21,7 +21,8 @@ pub struct Output {
 
 impl Output {
     pub fn new(json: bool, text: bool, fields: Option<String>) -> Self {
-        let json = json || (!text && !std::io::stdout().is_terminal());
+        // --fields trims JSON, so it implies JSON unless --text is explicit.
+        let json = json || (!text && (fields.is_some() || !std::io::stdout().is_terminal()));
         let fields = fields.map(|f| {
             f.split(',')
                 .map(|s| s.trim().to_string())
