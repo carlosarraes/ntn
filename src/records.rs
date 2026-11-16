@@ -143,6 +143,17 @@ pub fn refs(rich: &Value, users: &mut Vec<String>, pages: &mut Vec<String>) {
     }
 }
 
+/// Block ids that AI-generated text cites (`ci` decorations), in order.
+pub fn citations(rich: &Value) -> Vec<String> {
+    rich.as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|seg| seg[1].as_array().cloned().unwrap_or_default())
+        .filter(|d| d[0] == "ci")
+        .filter_map(|d| d[1]["blockId"].as_str().map(str::to_string))
+        .collect()
+}
+
 fn fmt_date(d: &Value) -> String {
     let start = d["start_date"].as_str().unwrap_or_default();
     let mut s = match d["start_time"].as_str() {

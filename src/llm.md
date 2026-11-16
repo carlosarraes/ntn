@@ -18,7 +18,7 @@ ntn page comments <url> [--all]          # open threads (with --all: resolved to
 ntn page changes <url> [--since 2d]      # blocks added/edited since, with the heading they sit under
 ntn db query <url|id> [--where 'Status=Done'] [--where 'Owner=@Ana'] [--sort 'Date desc'] [--limit N] [--search q]
 ntn meetings list [--since 7d] [--query q]
-ntn meetings read <url> [--transcript]   # summary, action_items {text,done,owners,due}, notes, transcript
+ntn meetings read <url> [--transcript]   # summary, action_items {text,done,owners,due,evidence}, notes, transcript
 ntn spaces                               # workspaces; pick one with --space <id>
 ntn auth whoami | list [--check]
 ```
@@ -28,7 +28,7 @@ Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c` (trims items;
 
 ## Tips
 - Search first, then `page read` the `url` of the best hit. On long pages use `--section`.
-- Meeting action items: `ntn meetings read <url> --fields action_items`.
+- Meeting action items: `ntn meetings read <url> --fields action_items`. AI items rarely carry @mentions, so owners/due are often empty; `evidence` holds the cited transcript lines {at,speaker,text} (speakers are anonymous `speaker0`, `speaker1`…).
 - Links to other pages in Markdown are full Notion URLs you can `page read` next.
 - Inline databases render as `🗃 Database [...]`; read rows with `ntn db query <url>`.
 - Keep output small: `ntn db query <url> --fields Name,Status,url`.

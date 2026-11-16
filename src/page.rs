@@ -4,7 +4,7 @@ use crate::client::Client;
 use crate::client::get;
 use crate::error::{AppError, Result};
 use crate::ids::url_for;
-use crate::records::{Store, collection_id, markdown, ms_to_iso, plain, refs};
+use crate::records::{Store, citations, collection_id, markdown, ms_to_iso, plain, refs};
 use serde_json::{Map, Value, json};
 
 const MAX_CHUNKS: u32 = 50;
@@ -106,7 +106,36 @@ pub fn load(client: &Client, store: &mut Store, page_id: &str, opts: Opts) -> Re
             break;
         }
     }
-    Ok(())
+    load_cited_lines(client, store, page_id, &skip)
+}
+
+/// Without `--transcript`, fetches only the transcript lines that action items cite,
+/// plus the first line so their offsets match the full transcript's.
+fn load_cited_lines(
+    client: &Client,
+    store: &mut Store,
+    page_id: &str,
+    skip: &[String],
+) -> Result<()> {
+    let Some(tid) = skip.first() else {
+        return Ok(());
+    };
+    let mut cited = Vec::new();
+    walk(store, page_id, true, skip, &mut |b| {
+        if b["type"] == "to_do" {
+            cited.extend(citations(&b["properties"]["title"]));
+        }
+    });
+    if cited.is_empty() {
+        return Ok(());
+    }
+    store.fetch_missing(client, "block", std::slice::from_ref(tid))?;
+    cited.extend(
+        store
+            .block(tid)
+            .and_then(|t| children(t).into_iter().next()),
+    );
+    store.fetch_missing(client, "block", &cited)
 }
 
 /// Visits loaded blocks under `id` in document order without descending into
@@ -360,6 +389,31 @@ pub fn meeting(store: &Store, page_id: &str, opts: Opts) -> Value {
                 .collect()
         })
         .unwrap_or_default();
+    let transcript_id = fmt_id(&b, "transcription_transcript_id");
+    // Offsets come from wall-clock time; per-session `start_ms` resets between recordings.
+    let first = transcript_id
+        .as_ref()
+        .and_then(|id| store.block(id))
+        .map(children)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|id| store.block(id))
+        .filter_map(|l| l["format"]["transcript_metadata"]["start_epoch_ms"].as_i64())
+        .min()
+        .unwrap_or(0);
+    let line = |l: &Value| {
+        let meta = &l["format"]["transcript_metadata"];
+        let secs = meta["start_epoch_ms"]
+            .as_i64()
+            .map(|e| (e - first).max(0) as u64 / 1000)
+            .or_else(|| meta["start_ms"].as_u64().map(|m| m / 1000))
+            .unwrap_or(0);
+        json!({
+            "at": format!("{:02}:{:02}", secs / 60, secs % 60),
+            "speaker": meta["speaker_name"].as_str().unwrap_or("speaker"),
+            "text": plain(&l["properties"]["title"], store),
+        })
+    };
     let mut actions = Vec::new();
     let skip = skipped(store, page_id, Opts { transcript: false });
     walk(store, page_id, true, &skip, &mut |blk| {
@@ -391,39 +445,23 @@ pub fn meeting(store: &Store, page_id: &str, opts: Opts) -> Value {
             "done": plain(&blk["properties"]["checked"], store) == "Yes",
             "owners": owners,
             "due": due,
+            "evidence": citations(title)
+                .iter()
+                .filter_map(|id| store.block(id))
+                .filter(|l| l["format"]["transcript_metadata"].is_object())
+                .map(&line)
+                .collect::<Vec<_>>(),
         }));
     });
-    let transcript_id = fmt_id(&b, "transcription_transcript_id");
     let transcript = transcript_id
         .as_ref()
         .filter(|_| opts.transcript)
         .and_then(|id| store.block(id))
         .map(|t| {
-            let lines: Vec<&Value> = children(t)
+            children(t)
                 .iter()
                 .filter_map(|id| store.block(id))
-                .collect();
-            // Offsets come from wall-clock time; per-session `start_ms` resets between recordings.
-            let first = lines
-                .iter()
-                .filter_map(|l| l["format"]["transcript_metadata"]["start_epoch_ms"].as_i64())
-                .min()
-                .unwrap_or(0);
-            lines
-                .iter()
-                .map(|l| {
-                    let meta = &l["format"]["transcript_metadata"];
-                    let secs = meta["start_epoch_ms"]
-                        .as_i64()
-                        .map(|e| (e - first).max(0) as u64 / 1000)
-                        .or_else(|| meta["start_ms"].as_u64().map(|m| m / 1000))
-                        .unwrap_or(0);
-                    json!({
-                        "at": format!("{:02}:{:02}", secs / 60, secs % 60),
-                        "speaker": meta["speaker_name"].as_str().unwrap_or("speaker"),
-                        "text": plain(&l["properties"]["title"], store),
-                    })
-                })
+                .map(&line)
                 .collect::<Vec<_>>()
         });
     json!({
@@ -847,6 +885,8 @@ mod tests {
             json!({ "transcription_summary_id": "sum", "transcription_transcript_id": "tr" });
         root["value"]["properties"]["att"] = json!([["‣", [["u", "u1"]]]]);
         let mut todo = b("t1", "to_do", "Ana Lima to send deck", &[], 0);
+        todo["value"]["properties"]["title"] =
+            json!([["Ana Lima to send deck "], ["‣", [["ci", { "blockId": "l2" }]]]]);
         todo["value"]["properties"]["checked"] = json!([["Yes"]]);
         let mut l1 = b("l1", "text", "hi", &[], 0);
         l1["value"]["format"] = json!({ "transcript_metadata": { "speaker_name": "speaker0", "start_epoch_ms": 1000 } });
@@ -860,7 +900,8 @@ mod tests {
         let m = meeting(&store, "m", Opts { transcript: true });
         assert_eq!(
             m["action_items"],
-            json!([{ "text": "Ana Lima to send deck", "done": true, "owners": ["Ana Lima"], "due": null }])
+            json!([{ "text": "Ana Lima to send deck", "done": true, "owners": ["Ana Lima"], "due": null,
+                     "evidence": [{ "at": "01:05", "speaker": "speaker1", "text": "bye" }] }])
         );
         assert_eq!(
             m["transcript"][1],
