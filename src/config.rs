@@ -39,6 +39,32 @@ pub struct Config {
     pub accounts: BTreeMap<String, Account>,
 }
 
+/// Profile name under which credentials from the environment are listed and selected.
+pub const ENV_PROFILE: &str = "env";
+
+/// Credentials supplied through the environment instead of a saved login.
+pub struct EnvCreds {
+    pub token_v2: String,
+    pub user_id: Option<String>,
+    pub user_agent: Option<String>,
+}
+
+fn env_var(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// `NTN_TOKEN_V2` (plus optional `NTN_USER_ID`, `NTN_USER_AGENT`), if set.
+pub fn env_creds() -> Option<EnvCreds> {
+    Some(EnvCreds {
+        token_v2: env_var("NTN_TOKEN_V2")?,
+        user_id: env_var("NTN_USER_ID"),
+        user_agent: env_var("NTN_USER_AGENT"),
+    })
+}
+
 pub fn config_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("NTN_CONFIG_DIR") {
         return Ok(PathBuf::from(dir));
@@ -94,7 +120,7 @@ impl Config {
             }
             None if self.accounts.is_empty() => {
                 return Err(AppError::auth(
-                    "no account configured; run `pbpaste | ntn auth parse-curl --login`",
+                    "no account configured; run `pbpaste | ntn auth parse-curl --login` or set NTN_TOKEN_V2",
                 ));
             }
             None => {

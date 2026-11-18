@@ -1,6 +1,6 @@
 use crate::client::Client;
 use crate::commands::{auth, read};
-use crate::config::Config;
+use crate::config::{Config, ENV_PROFILE, EnvCreds, Session, default_base, env_creds};
 use crate::error::{AppError, Result};
 use crate::output::Output;
 use clap::{Parser, Subcommand};
@@ -81,7 +81,35 @@ pub struct Ctx {
 }
 
 impl Ctx {
+    /// Env credentials apply unless a saved profile was asked for with `-a`.
+    pub fn env_creds(&self) -> Option<EnvCreds> {
+        match self.account.as_deref() {
+            None | Some(ENV_PROFILE) => env_creds(),
+            Some(_) => None,
+        }
+    }
+
+    /// Client for credentials held only in memory; the user id is discovered when not given.
+    pub fn env_client(&self, creds: EnvCreds) -> Result<Client> {
+        let build = |user_id: String| {
+            let session = Session {
+                token_v2: creds.token_v2.clone(),
+                user_id,
+                base_url: default_base(),
+                user_agent: creds.user_agent.clone(),
+            };
+            Client::new(session, self.space.clone(), self.verbose)
+        };
+        match &creds.user_id {
+            Some(id) => build(id.clone()),
+            None => build(build(String::new())?.discover_user_id()?),
+        }
+    }
+
     pub fn client(&self) -> Result<Client> {
+        if let Some(creds) = self.env_creds() {
+            return self.env_client(creds);
+        }
         let (_, acct) = Config::load()?.select(self.account.as_deref())?;
         let space = self.space.clone().or(acct.space_id);
         Client::new(acct.session, space, self.verbose)

@@ -17,6 +17,20 @@ curl -sSf https://raw.githubusercontent.com/carlosarraes/ntn/main/install.sh | s
 
 The session is stored in `~/.config/ntn/accounts.json` (mode 0600). `token_v2` gives full access to your Notion account, so keep that file private.
 
+## Run without a saved login
+
+For CI, containers or agents that shouldn't keep `~/.config/ntn` around, pass the session through the environment instead:
+
+```sh
+export NTN_TOKEN_V2='v03%3A...'      # the token_v2 cookie from your browser
+export NTN_USER_ID='...'             # optional: looked up from the token when unset
+ntn search "onboarding"
+```
+
+The credentials live in memory for that process: nothing is written to disk and the token is never printed. `NTN_SPACE` (or `--space`) picks the workspace and `NTN_USER_AGENT` replays a browser User-Agent; both are optional. If the user id can't be found from the token, ntn exits 9 and names `NTN_USER_ID`.
+
+Which credentials win: an explicit `-a <profile>` (or `NTN_ACCOUNT`) uses that saved profile; otherwise `NTN_TOKEN_V2` is used; otherwise the default saved profile. `-a env` forces the environment credentials, and `ntn auth list` shows them as profile `env` without printing the token.
+
 ## Use
 
 ```sh

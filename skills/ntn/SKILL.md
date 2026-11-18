@@ -30,6 +30,12 @@ ntn auth whoami | list [--check]
 Times: `30m`, `2h`, `7d`, `2w` or `YYYY-MM-DD`.
 Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c` (trims items; implies JSON), `--json`, `--text`, `-v`.
 
+## Credentials
+Normally a saved login (`pbpaste | ntn auth parse-curl --login`). With no saved login, set env vars and every read command (search, page read, auth whoami…) runs on them in memory; nothing is written to disk and the token is never printed.
+- `NTN_TOKEN_V2` (required): the `token_v2` cookie. `NTN_USER_ID` (optional): found from the token when unset; if that fails, exit 9 `configuration` naming NTN_USER_ID. `NTN_SPACE`/`--space` picks the workspace (default: the first), `NTN_USER_AGENT` replays a browser UA.
+- Precedence: `-a/--account` (or `NTN_ACCOUNT`) names a saved profile and wins; otherwise `NTN_TOKEN_V2`; otherwise the default saved profile. `-a env` forces the env credentials.
+- `ntn auth list` shows them as profile `env` (`active` marks the one in use).
+
 ## Tips
 - Paging search: the JSON has `next` (null on the last page); pass it as `--offset <next>` with the same query and flags. Search reaches the top 100 hits only: past that, narrow with `--in`, `--since` or a sharper query.
 - Search first, then `page read` the `url` of the best hit. On long pages use `--section`. Hits carry a `snippet` only if Notion returned highlight text (usually it does not); judge by `title`/`path`.

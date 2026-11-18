@@ -267,3 +267,149 @@ fn search_offset_beyond_what_notion_can_return_is_invalid_input() {
     assert_eq!(run.code, 2, "{}", run.stderr);
     assert_eq!(run.error()["error"]["code"], "invalid_input");
 }
+
+const ENV_TOKEN: &str = "env-token-v2";
+
+fn user_content_reply() -> serde_json::Value {
+    json!({ "recordMap": {
+        "notion_user": { "u-1": { "value": { "value": {
+            "id": "u-1", "name": "Fay", "email": "fay@example.com"
+        }, "role": "editor" } } },
+        "space": { "s-1": { "value": { "value": { "id": "s-1", "name": "Acme", "domain": "acme" }, "role": "editor" } } }
+    } })
+}
+
+#[test]
+fn env_credentials_run_commands_without_a_saved_login_and_stay_in_memory() {
+    let fake = search_server(vec![json!({ "id": page_id(1) })]);
+    let dir = tempfile::tempdir().unwrap();
+
+    let run = ntn(
+        &fake.base,
+        dir.path(),
+        &["-v", "search", "page"],
+        &[("NTN_TOKEN_V2", ENV_TOKEN)],
+    );
+
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(titles(&run), ["Page 1"]);
+    for out in [&run.stdout, &run.stderr] {
+        assert!(!out.contains(ENV_TOKEN), "token leaked: {out}");
+    }
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    let cookies = fake.cookies();
+    let search_cookie = cookies.last().unwrap();
+    assert!(search_cookie.contains(&format!("token_v2={ENV_TOKEN}")));
+    assert!(
+        search_cookie.contains("notion_user_id=u-1"),
+        "{search_cookie}"
+    );
+}
+
+#[test]
+fn env_credentials_without_a_discoverable_user_id_name_the_missing_variable() {
+    let fake = FakeNotion::start(|_, _| (200, json!({ "u-1": {}, "u-2": {} })));
+    let dir = tempfile::tempdir().unwrap();
+
+    let run = ntn(
+        &fake.base,
+        dir.path(),
+        &["search", "x"],
+        &[("NTN_TOKEN_V2", ENV_TOKEN)],
+    );
+
+    assert_eq!(run.code, 9, "{}", run.stdout);
+    let err = run.error();
+    assert_eq!(err["error"]["code"], "configuration");
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("NTN_USER_ID")
+    );
+    assert!(!run.stderr.contains(ENV_TOKEN));
+}
+
+#[test]
+fn whoami_with_env_credentials_uses_the_given_user_id_without_discovery() {
+    let fake = FakeNotion::start(|endpoint, _| match endpoint {
+        "loadUserContent" => (200, user_content_reply()),
+        other => (404, json!({ "name": "NotFound", "message": other })),
+    });
+    let dir = tempfile::tempdir().unwrap();
+
+    let run = ntn(
+        &fake.base,
+        dir.path(),
+        &["auth", "whoami"],
+        &[("NTN_TOKEN_V2", ENV_TOKEN), ("NTN_USER_ID", "u-1")],
+    );
+
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.json()["name"], "Fay");
+    assert_eq!(fake.endpoints(), ["loadUserContent"]);
+}
+
+#[test]
+fn explicit_account_beats_env_credentials_which_beat_the_saved_default() {
+    let fake = FakeNotion::start(|_, _| (200, spaces_reply()));
+    let dir = tempfile::tempdir().unwrap();
+    write_login(dir.path());
+    let env = [("NTN_TOKEN_V2", ENV_TOKEN), ("NTN_USER_ID", "u-1")];
+
+    ntn(&fake.base, dir.path(), &["spaces"], &env);
+    ntn(&fake.base, dir.path(), &["-a", "fake", "spaces"], &env);
+    ntn(&fake.base, dir.path(), &["spaces"], &[]);
+
+    let cookies = fake.cookies();
+    assert!(cookies[0].contains(ENV_TOKEN), "{}", cookies[0]);
+    assert!(cookies[1].contains(FAKE_TOKEN), "{}", cookies[1]);
+    assert!(cookies[2].contains(FAKE_TOKEN), "{}", cookies[2]);
+}
+
+#[test]
+fn auth_list_shows_the_env_profile_without_the_token() {
+    let fake = FakeNotion::start(|_, _| (200, spaces_reply()));
+    let dir = tempfile::tempdir().unwrap();
+    write_login(dir.path());
+
+    let run = ntn(
+        &fake.base,
+        dir.path(),
+        &["auth", "list"],
+        &[("NTN_TOKEN_V2", ENV_TOKEN), ("NTN_USER_ID", "u-1")],
+    );
+
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let accounts = run.json()["accounts"].clone();
+    let profiles: Vec<_> = accounts
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["profile"].clone())
+        .collect();
+    assert_eq!(profiles, [json!("fake"), json!("env")]);
+    assert_eq!(accounts[1]["user_id"], "u-1");
+    assert_eq!(accounts[1]["active"], true);
+    assert_eq!(accounts[0]["active"], false);
+    assert!(!run.stdout.contains(ENV_TOKEN) && !run.stderr.contains(ENV_TOKEN));
+}
+
+#[test]
+fn auth_list_with_an_explicit_account_marks_it_active_and_still_lists_env() {
+    let fake = FakeNotion::start(|_, _| (200, spaces_reply()));
+    let dir = tempfile::tempdir().unwrap();
+    write_login(dir.path());
+
+    let run = ntn(
+        &fake.base,
+        dir.path(),
+        &["-a", "fake", "auth", "list"],
+        &[("NTN_TOKEN_V2", ENV_TOKEN)],
+    );
+
+    let accounts = run.json()["accounts"].clone();
+    assert_eq!(accounts[0]["active"], true);
+    assert_eq!(accounts[1]["profile"], "env");
+    assert_eq!(accounts[1]["active"], false);
+}

@@ -1,6 +1,8 @@
 use crate::cli::Ctx;
 use crate::client::{Client, get, record_value};
-use crate::config::{Account, Config, Session, default_base, normalize_base_url};
+use crate::config::{
+    Account, Config, ENV_PROFILE, Session, default_base, env_creds, normalize_base_url,
+};
 use crate::curl;
 use crate::error::{AppError, Result};
 use clap::Subcommand;
@@ -109,15 +111,40 @@ pub fn run(ctx: &Ctx, cmd: AuthCmd) -> Result<()> {
         }
         AuthCmd::List { check } => {
             let cfg = Config::load()?;
+            let env = env_creds();
+            let env_active = ctx.env_creds().is_some();
+            let selected = if env_active {
+                None
+            } else {
+                cfg.select(ctx.account.as_deref()).ok().map(|(k, _)| k)
+            };
             let mut rows = Vec::new();
             for (key, a) in &cfg.accounts {
                 let mut row = json!({
                     "profile": key, "name": a.name, "email": a.email,
                     "user_id": a.session.user_id, "space_id": a.space_id,
                     "default": cfg.default_account.as_deref() == Some(key.as_str()),
+                    "active": selected.as_deref() == Some(key.as_str()),
                 });
                 if check {
                     let ok = Client::new(a.session.clone(), a.space_id.clone(), ctx.verbose)
+                        .and_then(|c| c.call("loadUserContent", json!({})));
+                    row["valid"] = json!(ok.is_ok());
+                    if let Err(e) = ok {
+                        row["error"] = json!(e.message);
+                    }
+                }
+                rows.push(row);
+            }
+            if let Some(creds) = env {
+                let mut row = json!({
+                    "profile": ENV_PROFILE, "name": "(environment)", "email": "",
+                    "user_id": creds.user_id, "space_id": ctx.space,
+                    "default": false, "active": env_active, "source": "env",
+                });
+                if check {
+                    let ok = ctx
+                        .env_client(creds)
                         .and_then(|c| c.call("loadUserContent", json!({})));
                     row["valid"] = json!(ok.is_ok());
                     if let Err(e) = ok {
@@ -135,7 +162,7 @@ pub fn run(ctx: &Ctx, cmd: AuthCmd) -> Result<()> {
                     .map(|r| {
                         format!(
                             "{} {:<16} {:<24} {}{}\n",
-                            if r["default"] == true { "*" } else { " " },
+                            if r["active"] == true { "*" } else { " " },
                             r["profile"].as_str().unwrap_or_default(),
                             r["name"].as_str().unwrap_or_default(),
                             r["email"].as_str().unwrap_or_default(),

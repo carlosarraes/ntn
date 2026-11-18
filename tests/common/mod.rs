@@ -76,6 +76,27 @@ impl FakeNotion {
     }
 }
 
+impl FakeNotion {
+    pub fn endpoints(&self) -> Vec<String> {
+        let seen = self.seen.lock().unwrap();
+        seen.iter().map(|s| s.endpoint.clone()).collect()
+    }
+
+    /// The `Cookie` header of every request, in order.
+    pub fn cookies(&self) -> Vec<String> {
+        let seen = self.seen.lock().unwrap();
+        seen.iter()
+            .map(|s| {
+                s.headers
+                    .lines()
+                    .find_map(|l| l.strip_prefix("cookie: ").or(l.strip_prefix("Cookie: ")))
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .collect()
+    }
+}
+
 pub struct Run {
     pub code: i32,
     pub stdout: String,

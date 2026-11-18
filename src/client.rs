@@ -56,6 +56,24 @@ impl Client {
         })
     }
 
+    /// Finds the user a bare `token_v2` belongs to: `getSpaces` is keyed by user id.
+    pub fn discover_user_id(&self) -> Result<String> {
+        let r = self.call("getSpaces", json!({}))?;
+        let users: Vec<&String> = r
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(_, v)| v.is_object())
+            .map(|(k, _)| k)
+            .collect();
+        match users.as_slice() {
+            [one] => Ok((*one).clone()),
+            _ => Err(AppError::config(
+                "cannot tell which user NTN_TOKEN_V2 belongs to; set NTN_USER_ID",
+            )),
+        }
+    }
+
     pub fn user_id(&self) -> &str {
         &self.session.user_id
     }
@@ -134,14 +152,15 @@ impl Client {
         body: &Value,
     ) -> std::result::Result<Value, (AppError, Option<Duration>)> {
         let s = &self.session;
+        // Without a user id (discovery from a bare token) only the token is sent.
+        let mut cookie = format!("token_v2={}", s.token_v2);
+        if !s.user_id.is_empty() {
+            cookie.push_str(&format!("; notion_user_id={}", s.user_id));
+        }
         let mut req = self
             .http
             .post(format!("{}/api/v3/{method}", self.base))
-            .header(
-                "Cookie",
-                format!("token_v2={}; notion_user_id={}", s.token_v2, s.user_id),
-            )
-            .header("x-notion-active-user-header", &s.user_id)
+            .header("Cookie", cookie)
             .header("Origin", &self.base)
             .header(
                 "User-Agent",
@@ -150,6 +169,9 @@ impl Client {
                     .unwrap_or(concat!("ntn/", env!("CARGO_PKG_VERSION"))),
             )
             .json(body);
+        if !s.user_id.is_empty() {
+            req = req.header("x-notion-active-user-header", &s.user_id);
+        }
         if let Some(space) = &self.space_id {
             req = req.header("x-notion-space-id", space);
         }
