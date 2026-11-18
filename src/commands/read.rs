@@ -379,13 +379,29 @@ pub fn page(ctx: &Ctx, cmd: PageCmd) -> Result<()> {
         } => {
             let opts = Opts { transcript };
             let mut out = Vec::new();
+            let mut missing = Vec::new();
             for input in &pages {
-                let (store, id) = load_page(&client, input, opts)?;
+                let (store, id) = match load_page(&client, input, opts) {
+                    Ok(loaded) => loaded,
+                    Err(e) if e.code == "not_found" => {
+                        let t = ids::parse(input)?;
+                        missing.push(t.peek_id.unwrap_or(t.id));
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                };
                 let md = match &section {
                     Some(h) => page::section(&store, &id, h)?,
                     None => page::render(&store, &id, opts),
                 };
                 out.push(page_json(&store, &id, md));
+            }
+            if !missing.is_empty() {
+                return Err(AppError::not_found(format!(
+                    "not found or not shared with you: {}",
+                    missing.join(", ")
+                ))
+                .with_details(json!({ "missing": missing })));
             }
             let value = if out.len() == 1 {
                 out.remove(0)

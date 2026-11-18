@@ -29,6 +29,7 @@ Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c` (trims items;
 ## Tips
 - Search first, then `page read` the `url` of the best hit. On long pages use `--section`.
 - Meeting action items: `ntn meetings read <url> --fields action_items`. AI items rarely carry @mentions, so owners/due are often empty; `evidence` holds the cited transcript lines {at,speaker,text} (speakers are anonymous `speaker0`, `speaker1`…).
+- A missing or inaccessible page exits 4 with `not_found`. With several pages, one missing page fails the whole call (nothing on stdout; `error.details.missing` lists the ids): drop those ids and re-run.
 - Links to other pages in Markdown are full Notion URLs you can `page read` next.
 - Inline databases render as `🗃 Database [...]`; read rows with `ntn db query <url>`.
 - Keep output small: `ntn db query <url> --fields Name,Status,url`.

@@ -76,6 +76,9 @@ pub fn load(client: &Client, store: &mut Store, page_id: &str, opts: Opts) -> Re
             "page {page_id} not found or not shared with you"
         )));
     };
+    if root["alive"] == false {
+        return Err(AppError::not_found(format!("page {page_id} was deleted")));
+    }
     if root["parent_table"] == "collection"
         && let Some(cid) = root["parent_id"].as_str()
     {

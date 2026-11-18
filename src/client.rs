@@ -196,6 +196,8 @@ impl Client {
 
 /// Notion wraps records as `{value:{...},role}` or, in newer responses,
 /// `{spaceId, value:{value:{...},role}}`. Returns the inner record either way.
+/// Notion answers lookups of missing or inaccessible records with a wrapper that
+/// holds no record (`{value:null,role:"none"}`), so a record must carry an `id`.
 pub fn record_value(entry: &Value) -> Option<&Value> {
     let v = &entry["value"];
     let inner = if v["value"].is_object() {
@@ -203,7 +205,7 @@ pub fn record_value(entry: &Value) -> Option<&Value> {
     } else {
         v
     };
-    inner.is_object().then_some(inner)
+    inner["id"].is_string().then_some(inner)
 }
 
 pub fn merge_record_map(into: &mut Value, from: &Value) {
@@ -324,5 +326,17 @@ mod tests {
         assert_eq!(record_value(&old).unwrap()["id"], "a");
         assert_eq!(record_value(&new).unwrap()["id"], "a");
         assert!(record_value(&json!({"role":"none"})).is_none());
+    }
+
+    #[test]
+    fn record_value_ignores_wrappers_without_a_record() {
+        for empty in [
+            json!({"spaceId":"s","value":{"value":null,"role":"none"}}),
+            json!({"value":{"role":"none"}}),
+            json!({"value":{}}),
+            json!({"value":{"value":{},"role":"none"}}),
+        ] {
+            assert!(record_value(&empty).is_none(), "{empty}");
+        }
     }
 }
