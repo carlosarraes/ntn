@@ -31,7 +31,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(session: Session, space_id: Option<String>, verbose: bool) -> Result<Self> {
-        let base = crate::config::normalize_base_url(&session.base_url)?;
+        let base = crate::config::resolve_base(&session.base_url)?;
         Self::with_base(session, space_id, base, verbose)
     }
 

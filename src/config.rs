@@ -148,6 +148,25 @@ pub fn normalize_base_url(input: &str) -> Result<String> {
     Ok(format!("https://{host}"))
 }
 
+/// Base URL the client talks to. `NTN_BASE_URL` redirects traffic for tests and
+/// local fakes, but only to a loopback host: the session cookie must never be
+/// sent anywhere except Notion over https or this machine.
+pub fn resolve_base(configured: &str) -> Result<String> {
+    let Some(over) = std::env::var("NTN_BASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    else {
+        return normalize_base_url(configured);
+    };
+    if let Ok(url) = url::Url::parse(over.trim())
+        && matches!(url.scheme(), "http" | "https")
+        && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+    {
+        return Ok(url.origin().ascii_serialization());
+    }
+    normalize_base_url(&over)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
