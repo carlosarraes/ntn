@@ -125,3 +125,63 @@ fn reading_an_existing_page_still_works() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert_eq!(run.json()["title"], "Hello world");
 }
+
+fn page_id(n: usize) -> String {
+    format!("00000000-0000-4000-8000-{n:012}")
+}
+
+fn block(n: usize) -> serde_json::Value {
+    json!({ "spaceId": "s-1", "value": { "value": {
+        "id": page_id(n), "type": "page", "alive": true,
+        "properties": { "title": [[format!("Page {n}")]] },
+        "last_edited_time": 1_700_000_000_000_i64
+    }, "role": "reader" } })
+}
+
+/// A search endpoint that, like Notion's, honours `limit` and knows nothing about offsets.
+fn search_server(hits: Vec<serde_json::Value>) -> FakeNotion {
+    FakeNotion::start(move |endpoint, body| match endpoint {
+        "getSpaces" => (200, spaces_reply()),
+        "search" => {
+            let limit = body["limit"].as_u64().unwrap() as usize;
+            let page: Vec<_> = hits.iter().take(limit).cloned().collect();
+            let mut blocks = json!({});
+            for h in &page {
+                let n: usize = h["id"].as_str().unwrap()[24..].parse().unwrap();
+                blocks[h["id"].as_str().unwrap()] = block(n);
+            }
+            (
+                200,
+                json!({ "total": hits.len(), "results": page, "recordMap": { "block": blocks } }),
+            )
+        }
+        other => (404, json!({ "name": "NotFound", "message": other })),
+    })
+}
+
+#[test]
+fn search_only_shows_a_snippet_when_notion_sent_highlight_text() {
+    let fake = search_server(vec![
+        json!({ "id": page_id(1), "highlight": { "text": "see <gzkNfoUU>needle</gzkNfoUU> here", "title": "" } }),
+        json!({ "id": page_id(2), "highlight": { "text": "", "title": "<gzkNfoUU>Page</gzkNfoUU> 2" } }),
+        json!({ "id": page_id(3) }),
+        json!({ "id": page_id(4), "highlights": { "textHighlights": ["a <gzkNfoUU>b</gzkNfoUU>", { "text": "c" }] } }),
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    write_login(dir.path());
+
+    let run = ntn(&fake.base, dir.path(), &["search", "needle"], &[]);
+
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let results = run.json()["results"].clone();
+    assert_eq!(results[0]["snippet"], "see needle here");
+    for empty in [1, 2] {
+        assert!(
+            results[empty].get("snippet").is_none(),
+            "hit {empty} must not carry an empty snippet: {}",
+            results[empty]
+        );
+    }
+    assert_eq!(results[3]["snippet"], "a b … c");
+    assert_eq!(results[1]["title"], "Page 2");
+}

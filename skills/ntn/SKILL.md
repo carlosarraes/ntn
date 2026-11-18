@@ -31,7 +31,7 @@ Times: `30m`, `2h`, `7d`, `2w` or `YYYY-MM-DD`.
 Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c` (trims items; implies JSON), `--json`, `--text`, `-v`.
 
 ## Tips
-- Search first, then `page read` the `url` of the best hit. On long pages use `--section`.
+- Search first, then `page read` the `url` of the best hit. On long pages use `--section`. Hits carry a `snippet` only if Notion returned highlight text (usually it does not); judge by `title`/`path`.
 - Meeting action items: `ntn meetings read <url> --fields action_items`. AI items rarely carry @mentions, so owners/due are often empty; `evidence` holds the cited transcript lines {at,speaker,text} (speakers are anonymous `speaker0`, `speaker1`…).
 - A missing or inaccessible page exits 4 with `not_found`. With several pages, one missing page fails the whole call (nothing on stdout; `error.details.missing` lists the ids): drop those ids and re-run.
 - Links to other pages in Markdown are full Notion URLs you can `page read` next.

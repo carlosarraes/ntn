@@ -236,19 +236,22 @@ fn resolve_user(client: &Client, space: &str, input: &str) -> Result<String> {
     }
 }
 
+/// Highlight text of a search hit, markers stripped. Notion has sent it as
+/// `highlight.text` and as `highlights.textHighlights` (strings or `{text}`);
+/// both are read, and a hit without any text yields `None`.
 fn snippet(hit: &Value, marker: &Regex) -> Option<String> {
-    let parts: Vec<String> = hit["highlights"]["textHighlights"]
+    let parts: Vec<&str> = hit["highlights"]["textHighlights"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|h| h.as_str().or(h["text"].as_str()).map(str::to_string))
+        .filter_map(|h| h.as_str().or(h["text"].as_str()))
         .collect();
     let raw = if parts.is_empty() {
         hit["highlight"]["text"].as_str()?.to_string()
     } else {
         parts.join(" … ")
     };
-    Some(marker.replace_all(&raw, "").to_string()).filter(|s| !s.is_empty())
+    Some(marker.replace_all(&raw, "").trim().to_string()).filter(|s| !s.is_empty())
 }
 
 pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
@@ -302,15 +305,18 @@ pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
             {
                 return None;
             }
-            Some(json!({
+            let mut item = json!({
                 "id": id,
                 "title": store.title(id),
                 "type": b.map(|b| b["type"].clone()),
                 "path": Some(store.path(id)).filter(|p| !p.is_empty()),
-                "snippet": snippet(hit, &marker),
                 "last_edited": b.and_then(|b| ms_to_iso(&b["last_edited_time"])),
                 "url": url_for(&store.base, id),
-            }))
+            });
+            if let Some(text) = snippet(hit, &marker) {
+                item["snippet"] = json!(text);
+            }
+            Some(item)
         })
         .collect();
     let total = if since_ms.is_some() {
