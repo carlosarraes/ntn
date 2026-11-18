@@ -20,7 +20,7 @@ The session is stored in `~/.config/ntn/accounts.json` (mode 0600). `token_v2` g
 ## Use
 
 ```sh
-ntn search "onboarding"
+ntn search "onboarding" --limit 20            # JSON has "next"; page on with --offset <next>
 ntn page read https://www.notion.so/acme/Onboarding-1a2b3c4d5e6f40718293a4b5c6d7e8f9
 ntn db query 'https://www.notion.so/acme/9f8e...?v=0123...' --limit 20 --fields Name,Status,url
 ntn spaces

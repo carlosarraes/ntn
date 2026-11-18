@@ -16,7 +16,7 @@ Any Notion URL (`https://www.notion.so/<ws>/Title-<32hex>[?v=<view>][&p=<page>]`
 
 ## Commands
 ```
-ntn search "<query>" [--limit N] [--sort relevance|last-edited] [--in <page>] [--since 7d] [--edited-by me|@Name]
+ntn search "<query>" [--limit N] [--offset N] [--sort relevance|last-edited] [--in <page>] [--since 7d] [--edited-by me|@Name]
 ntn page read <url|id> [<url|id> ...] [--section "Heading"] [--transcript]   # Markdown; several pages -> JSON array
 ntn page comments <url> [--all]          # open threads (with --all: resolved too): quote, author, time
 ntn page changes <url> [--since 2d]      # blocks added/edited since, with the heading they sit under
@@ -31,6 +31,7 @@ Times: `30m`, `2h`, `7d`, `2w` or `YYYY-MM-DD`.
 Global: `-a/--account <profile>`, `--space <id>`, `--fields a,b.c` (trims items; implies JSON), `--json`, `--text`, `-v`.
 
 ## Tips
+- Paging search: the JSON has `next` (null on the last page); pass it as `--offset <next>` with the same query and flags. Search reaches the top 100 hits only: past that, narrow with `--in`, `--since` or a sharper query.
 - Search first, then `page read` the `url` of the best hit. On long pages use `--section`. Hits carry a `snippet` only if Notion returned highlight text (usually it does not); judge by `title`/`path`.
 - Meeting action items: `ntn meetings read <url> --fields action_items`. AI items rarely carry @mentions, so owners/due are often empty; `evidence` holds the cited transcript lines {at,speaker,text} (speakers are anonymous `speaker0`, `speaker1`…).
 - A missing or inaccessible page exits 4 with `not_found`. With several pages, one missing page fails the whole call (nothing on stdout; `error.details.missing` lists the ids): drop those ids and re-run.

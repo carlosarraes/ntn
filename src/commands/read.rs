@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 
 const DAY_MS: i64 = 86_400_000;
 const MAX_MEETING_DAYS: i64 = 180;
+/// Most hits one Notion search call returns; paging walks within this window.
+const SEARCH_WINDOW: usize = 100;
 
 #[derive(Clone, Copy, ValueEnum)]
 pub enum Sort {
@@ -24,6 +26,9 @@ pub struct SearchArgs {
     query: String,
     #[arg(long, default_value_t = 20)]
     limit: usize,
+    /// Skip this many hits; pass the `next` value of the previous page
+    #[arg(long, default_value_t = 0)]
+    offset: usize,
     #[arg(long, value_enum, default_value = "relevance")]
     sort: Sort,
     /// Only results under this page (URL or id)
@@ -255,7 +260,13 @@ fn snippet(hit: &Value, marker: &Regex) -> Option<String> {
 }
 
 pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
-    let limit = read_limit(args.limit, 100)?;
+    let limit = read_limit(args.limit, SEARCH_WINDOW)?;
+    let offset = args.offset;
+    if offset >= SEARCH_WINDOW {
+        return Err(AppError::input(format!(
+            "--offset must be below {SEARCH_WINDOW}: Notion search returns at most {SEARCH_WINDOW} hits; narrow with --since, --in or a better query"
+        )));
+    }
     let client = ctx.client()?;
     let space = space_id(&client)?;
     let ancestors: Vec<String> = args
@@ -281,7 +292,14 @@ pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
         &space,
         &SearchQuery {
             query: &args.query,
-            limit,
+            // Notion has no offset, so fetch through this page plus one hit to
+            // learn whether another page exists. The date filter trims hits
+            // after the fact, so it needs the whole window.
+            limit: if since_ms.is_some() {
+                SEARCH_WINDOW
+            } else {
+                (offset + limit + 1).min(SEARCH_WINDOW)
+            },
             sort,
             ancestors,
             edited_by,
@@ -324,8 +342,11 @@ pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
     } else {
         r["total"].clone()
     };
-    ctx.out
-        .emit(json!({ "total": total, "results": results }), |v| {
+    let next = (results.len() > offset + limit).then_some(offset + limit);
+    let results: Vec<Value> = results.into_iter().skip(offset).take(limit).collect();
+    ctx.out.emit(
+        json!({ "total": total, "next": next, "results": results }),
+        |v| {
             let mut s = format!("{} results\n\n", v["total"]);
             for hit in v["results"].as_array().into_iter().flatten() {
                 let icon = match hit["type"].as_str() {
@@ -349,8 +370,12 @@ pub fn search(ctx: &Ctx, args: SearchArgs) -> Result<()> {
                     hit["last_edited"].as_str().unwrap_or("?")
                 ));
             }
+            if let Some(n) = v["next"].as_u64() {
+                s.push_str(&format!("More results: --offset {n}\n"));
+            }
             s
-        });
+        },
+    );
     Ok(())
 }
 

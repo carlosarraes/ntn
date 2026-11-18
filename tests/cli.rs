@@ -185,3 +185,85 @@ fn search_only_shows_a_snippet_when_notion_sent_highlight_text() {
     assert_eq!(results[3]["snippet"], "a b … c");
     assert_eq!(results[1]["title"], "Page 2");
 }
+
+fn titles(run: &common::Run) -> Vec<String> {
+    run.json()["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["title"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn search_pages_through_results_by_pasting_next_into_offset() {
+    let fake = search_server((1..=5).map(|n| json!({ "id": page_id(n) })).collect());
+    let dir = tempfile::tempdir().unwrap();
+    write_login(dir.path());
+    let search = |extra: &[&str]| {
+        let mut args = vec!["search", "page", "--limit", "2"];
+        args.extend_from_slice(extra);
+        ntn(&fake.base, dir.path(), &args, &[])
+    };
+
+    let mut seen = Vec::new();
+    let mut offset: Option<String> = None;
+    for _ in 0..5 {
+        let run = match &offset {
+            Some(o) => search(&["--offset", o]),
+            None => search(&[]),
+        };
+        assert_eq!(run.code, 0, "{}", run.stderr);
+        seen.extend(titles(&run));
+        match run.json()["next"].as_u64() {
+            Some(n) => offset = Some(n.to_string()),
+            None => {
+                assert!(run.json()["next"].is_null());
+                break;
+            }
+        }
+    }
+
+    assert_eq!(seen, ["Page 1", "Page 2", "Page 3", "Page 4", "Page 5"]);
+}
+
+#[test]
+fn search_text_output_hints_the_next_offset_only_when_there_is_more() {
+    let fake = search_server((1..=3).map(|n| json!({ "id": page_id(n) })).collect());
+    let dir = tempfile::tempdir().unwrap();
+    write_login(dir.path());
+
+    let first = ntn(
+        &fake.base,
+        dir.path(),
+        &["search", "p", "--limit", "2", "--text"],
+        &[],
+    );
+    let last = ntn(
+        &fake.base,
+        dir.path(),
+        &["search", "p", "--limit", "2", "--offset", "2", "--text"],
+        &[],
+    );
+
+    assert!(first.stdout.contains("--offset 2"), "{}", first.stdout);
+    assert!(!last.stdout.contains("--offset"), "{}", last.stdout);
+    assert!(last.stdout.contains("Page 3"), "{}", last.stdout);
+}
+
+#[test]
+fn search_offset_beyond_what_notion_can_return_is_invalid_input() {
+    let fake = search_server(vec![]);
+    let dir = tempfile::tempdir().unwrap();
+    write_login(dir.path());
+
+    let run = ntn(
+        &fake.base,
+        dir.path(),
+        &["search", "p", "--offset", "100"],
+        &[],
+    );
+
+    assert_eq!(run.code, 2, "{}", run.stderr);
+    assert_eq!(run.error()["error"]["code"], "invalid_input");
+}
